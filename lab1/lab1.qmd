@@ -1,0 +1,88 @@
+---
+title: "Лабораторна робота №1: Основи маніпуляції даними з `dplyr`"
+subtitle: "Інженерія даних | КрНУ ім. М. Остроградського"
+author: "[Секретарюк Валерій](https://github.com/SquireUA)"
+date: last-modified
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    sidebar: left
+    collapse-level: 2
+    code-fold: true
+    code-overflow: wrap
+    page-layout: full
+editor: visual
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Мета роботи
+
+Освоїти фундаментальні операції маніпуляції даними в середовищі R за допомогою сучасного пакета `dplyr`, використовуючи функціональний підхід та конвеєрне програмування (`%>%` або `|>`). Навчитися ефективно фільтрувати, перетворювати, агрегувати та реструктурувати дані для подальшого аналізу чи завантаження в ETL-процеси.
+
+### Варіант 1
+
+Датасет `starwars`
+
+1.  Вибірка та фільтрація
+
+    Відфільтруйте персонажів, у яких відомий зріст (height) та відома маса (mass). Виберіть лише стовпці: name, height, mass, species, homeworld. Відсортуйте за зростанням зросту.
+
+    ```{r}
+    library(dplyr)
+
+
+    task1 <- starwars |> 
+      filter(!is.na(height), !is.na(mass)) |> 
+      select(name, height, mass, species, homeworld) |> 
+      arrange(height)
+
+    task1
+
+    ```
+
+------------------------------------------------------------------------
+
+2.  Створення нового стовпця
+
+Додайте стовпець bmi (індекс маси тіла), розрахований за формулою: bmi = mass / (height / 100)\^2. Оберіть персонажів, у яких bmi \> 25, і відсортуйте їх за спаданням bmi.
+
+```{r}
+task1 |> 
+  mutate(name, bmi = mass / (height / 100 )^2) |> 
+  filter(bmi > 25)
+```
+
+3.  Групування та агрегація
+
+Для кожної раси (species), яка представлена більш ніж одним персонажем, розрахуйте:
+
+середній зріст (mean_height), середню масу (mean_mass), кількість персонажів (n). Використайте summarise() та across() для агрегації числових стовпців.
+
+```{r}
+task3 <- starwars |>
+  filter(!is.na(species)) |> 
+  group_by(species) |> 
+  filter(n()>1) |> 
+  summarise(n = n(), across(c(height,mass), mean,na.rm = TRUE, .names = "mean_{.col}"))
+  
+task3
+```
+
+4.  Перейменування та реструктуризація
+
+Візьміть результат попереднього пункту.
+
+Перейменуйте стовпець species на Раса. Перемістіть стовпець n (кількість) на перше місце. Перетворіть назви всіх інших стовпців на верхній регістр (наприклад, MEAN_HEIGHT).
+
+```{r}
+task3 |> 
+  rename(Раса = species) |> 
+  relocate(n, .before = everything()) |> 
+  rename_with(toupper, starts_with("mean"))
+```
