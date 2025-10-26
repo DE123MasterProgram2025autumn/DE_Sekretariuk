@@ -1,0 +1,165 @@
+---
+title: "Лабораторна робота №2: Інтеграція та об’єднання даних з різних джерел"
+subtitle: "Інженерія даних | КрНУ ім. М. Остроградського"
+author: "[Секретарюк Валерій](https://github.com/SquireUA)"
+date: last-modified
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    sidebar: left
+    collapse-level: 2
+    code-fold: true
+    code-overflow: wrap
+    page-layout: full
+editor: visual
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Мета роботи
+
+Освоїти повний цикл інтеграції реляційних даних у середовищі R: від завантаження даних з різноманітних джерел (CSV, Excel, Google Таблиці) до їх об’єднання за допомогою вертикальних (`bind_rows`) та горизонтальних (`left_join`, `semi_join`, `anti_join`) операцій. Навчитися будувати реалістичні ETL-конвеєри, які моделюють типові задачі інженера даних у production-середовищі.
+
+## Варіант 1
+
+Датасети згенерувати самостійно.
+
+### **Тема: Аналіз продажів за два квартали**
+
+Ви отримали два Excel-файли з даними про продажі компанії:
+
+-   `sales_q1.xlsx` — містить аркуші:
+    -   `products` — довідник товарів (`product_id`, `product_name`, `category`)
+    -   `sales_jan`, `sales_feb`, `sales_mar` — щомісячні продажі (`order_id`, `product_id`, `quantity`, `price_per_unit`, `customer_id`)
+-   `sales_q2.xlsx` — аналогічна структура для квітня, травня, червня.
+
+Крім того, є окремий файл `customers.csv` з інформацією про клієнтів:\
+`customer_id`, `region`, `customer_type` (B2B / B2C).
+
+------------------------------------------------------------------------
+
+### Завдання:
+
+1.  **Завантаження даних**
+
+    -   Завантажте обидва Excel-файли, прочитайте всі аркуші з продажами.
+    -   Завантажте `customers.csv` за допомогою `vroom`.
+
+    ```{r}
+    #install.packages("vroom")
+    #install.packages("readxl")
+    #install.packages("devtools")
+    #devtools::install_github("tidyverse/googlesheets4")
+
+    packages <- c("vroom", "readxl", "devtools", "vroom")
+
+    lapply(packages, library, character.only = TRUE)
+
+    library("vroom")
+
+    cs_data <- vroom(file = "data/customers.csv")
+
+    cs_data
+    ```
+
+2.  **Вертикальне об’єднання**
+
+    -   Об’єднайте всі 6 таблиць продажів (`jan`–`jun`) у єдину таблицю `all_sales`.
+    -   Додайте стовпець `month` з назвою місяця (наприклад, `"2024-01"`).
+
+    ```{r}
+    library(readxl)
+    library(dplyr)
+    library(tidyr)
+    library(stringr)
+
+    sheets1 <- excel_sheets("data/sales_q1.xlsx")
+
+    sheets2 <- excel_sheets("data/sales_q2.xlsx")
+
+
+    s_q1 <- sapply( sheets1, 
+                    read_excel, 
+                    path = "data/sales_q1.xlsx" )
+
+    s_q2 <- sapply( sheets2, 
+                    read_excel, 
+                    path = "data/sales_q2.xlsx" )
+
+    all_sales <- s_q1[['sales_jan']] |> 
+      mutate(month = "2025-01") |> 
+      bind_rows(s_q1[['sales_feb']] |> 
+                  mutate(month = "2025-02")) |> 
+      bind_rows(s_q1[['sales_mar']] |> 
+                  mutate(month = "2025-03")) |> 
+      bind_rows(s_q2[['sales_apr']] |> 
+                  mutate(month = "2025-04")) |> 
+      bind_rows(s_q2[['sales_may']] |> 
+                  mutate(month = "2025-05")) |> 
+      bind_rows(s_q2[['sales_jun']] |> 
+                  mutate(month = "2025-06"))
+
+    all_sales
+    ```
+
+3.  **Горизонтальне об’єднання**
+
+    -   Додайте до `all_sales` інформацію про товари (`product_name`, `category`) через `left_join`.
+    -   Додайте інформацію про клієнтів (`region`, `customer_type`) через `left_join`.
+
+    ```{r}
+
+    all_sales <- left_join(all_sales, s_q1[['products']], by="product_id") |> 
+      left_join(cs_data, by="customer_id")
+
+    all_sales
+    ```
+
+4.  **Агрегація та аналіз**
+
+    -   Розрахуйте загальний дохід: `revenue = quantity * price_per_unit`.
+    -   Для кожного місяця та регіону обчисліть:
+        -   загальний дохід,
+        -   кількість унікальних клієнтів,
+        -   середній чек (`revenue / кількість замовлень`).
+
+    ```{r}
+
+    all_sales |> 
+      mutate(revenue = quantity * price_per_unit) |>              
+      group_by(month) |>                                   
+      summarise(
+        total_revenue = sum(revenue, na.rm = TRUE),
+        unique_customers = n_distinct(customer_id),
+        avg_check = total_revenue / n()                        
+      )
+    ```
+
+5.  **Фільтруюче з’єднання**
+
+    -   Визначте `customer_id`, які робили покупки **і в Q1, і в Q2** (використайте `semi_join`).
+    -   Визначте клієнтів, які **зникли після Q1** (були в Q1, але не в Q2) — використайте `anti_join`.
+
+```{r}
+
+q1_customers <- all_sales |> 
+  filter(month == c("2025-01", "2025-02", "2025-03")) |> 
+  distinct(customer_id)
+
+q2_customers <- all_sales |> 
+  filter(month == c("2025-04", "2025-05", "2025-06")) |> 
+  distinct(customer_id)
+  
+common_customers <- semi_join(q1_customers, q2_customers, by = "customer_id")
+
+common_customers
+
+lost_customers <- anti_join(q1_customers, q2_customers, by = "customer_id")
+
+lost_customers
+```
