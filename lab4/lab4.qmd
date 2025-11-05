@@ -1,0 +1,254 @@
+---
+title: "Лабораторна робота №4: Оптимізація коду в R — від циклів до функціонального програмування"
+subtitle: "Інженерія даних | КрНУ ім. М. Остроградського"
+author: "[Секретарюк Валерій](https://github.com/SquireUA)"
+date: last-modified
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    sidebar: left
+    collapse-level: 2
+    code-fold: true
+    code-overflow: wrap
+    page-layout: full
+editor: visual
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Мета роботи
+
+Освоїти сучасні підходи до оптимізації коду в R, зокрема:\
+- заміну імперативних циклів (`for`, `while`, `repeat`) на **функціонали** (`lapply`, `sapply`, `vapply`, `mapply`);\
+- використання **векторизованих операцій** (`rowSums`, `colMeans`, `apply`);\
+- застосування конструкцій обробки помилок (`try`, `tryCatch`) для стійкості конвеєрів.\
+Навчитися писати **ефективний, читабельний і масштабований код** у рамках функціональної парадигми програмування.
+
+## Варіант 1
+
+### **Тема: Аналіз якості даних у папці з щомісячними звітами**
+
+Ви отримали папку `monthly_reports/`, яка містить **12 CSV-файлів** (`jan.csv`, `feb.csv`, ..., `dec.csv`) зі звітами про продажі. Однак деякі файли можуть бути: - пошкодженими (неправильний формат, відсутні стовпці), - порожніми, - містити некоректні значення (негативні ціни, `NA` у ключових полях).
+
+Ваше завдання — побудувати **надійний, оптимізований ETL-конвеєр** у функціональному стилі.
+
+------------------------------------------------------------------------
+
+### Структура даних
+
+Кожен файл має стовпці:\
+`product_id`, `region`, `units_sold`, `price_per_unit`, `discount_percent`
+
+------------------------------------------------------------------------
+
+### Завдання
+
+### **Етап 1: Безпечне завантаження файлів**
+
+-   Створіть функцію `safe_read_report(path)`, яка:
+    -   використовує `tryCatch()` для перехоплення помилок при читанні;
+    -   у разі помилки — виводить повідомлення через `message()` і повертає **порожній tibble** з правильними стовпцями;
+    -   перевіряє наявність усіх 5 стовпців; якщо чогось не вистачає — повертає порожній tibble.
+-   Використовуйте `list.files()` + `lapply()` (або `map()`) для завантаження всіх файлів.
+-   Об’єднайте результат у єдину таблицю `all_sales`.
+
+all_al
+
+```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+
+
+safe_read_report <- function(path) {
+  required_cols <- c("product_id", "region", "units_sold", "price_per_unit", "discount_percent")
+  
+  df <- tryCatch(
+    read_csv(path, show_col_types = FALSE),
+    error = function(e) {
+      message("Помилка при читанні файлу: ", path, " — ", e$message)
+      return(tibble(
+        product_id = character(),
+        region = character(),
+        units_sold = numeric(),
+        price_per_unit = numeric(),
+        discount_percent = numeric()
+      ))
+    }
+  )
+  
+
+  if (nrow(df) == 0) {
+    message("Порожній файл: ", path)
+    return(tibble(
+      product_id = character(),
+      region = character(),
+      units_sold = numeric(),
+      price_per_unit = numeric(),
+      discount_percent = numeric()
+    ))
+  }
+  
+
+  if (!all(required_cols %in% names(df))) {
+    message("Відсутні необхідні стовпці у файлі: ", path)
+    return(tibble(
+      product_id = character(),
+      region = character(),
+      units_sold = numeric(),
+      price_per_unit = numeric(),
+      discount_percent = numeric()
+    ))
+  }
+  
+
+  df <- df %>%
+    mutate(
+      product_id = as.character(product_id),
+      region = as.character(region),
+      units_sold = as.numeric(units_sold),
+      price_per_unit = as.numeric(price_per_unit),
+      discount_percent = as.numeric(discount_percent)
+    )
+  
+  return(df)
+}
+
+
+file_paths <- list.files("monthly_reports", pattern = "\\.csv$", full.names = TRUE)
+
+
+all_sales <- lapply(file_paths, safe_read_report) %>% bind_rows()
+all_sales
+```
+
+### **Етап 2: Оптимізована обробка даних**
+
+-   Додайте стовпець `month` на основі імені файлу (наприклад, `"jan"` → `"2024-01"`).
+-   Розрахуйте `revenue = units_sold * price_per_unit * (1 - discount_percent / 100)`.
+-   Використовуйте **векторизовані операції**, а не цикли.
+-   Для кожного місяця обчисліть:
+    -   загальний дохід (`total_revenue`),
+    -   середню ціну (`avg_price`),
+    -   кількість унікальних продуктів (`n_products`).
+
+```{r}
+month_map <- c(
+  jan = "2024-01", feb = "2024-02", mar = "2024-03", apr = "2024-04",
+  may = "2024-05", jun = "2024-06", jul = "2024-07", aug = "2024-08",
+  sep = "2024-09", oct = "2024-10", nov = "2024-11", dec = "2024-12"
+)
+
+file_paths <- list.files("monthly_reports", pattern = "\\.csv$", full.names = TRUE)
+
+all_sales <- file_paths %>% 
+  map_df(function(file_path) {
+    
+    month_key <- str_remove(basename(file_path), "\\.csv$")
+    df <- safe_read_report(file_path)
+    df <- df %>% mutate(month = month_map[[month_key]])
+    return(df)
+  })
+
+
+all_sales <- all_sales %>%
+  mutate(
+    revenue = units_sold * price_per_unit * (1 - discount_percent / 100)
+  )
+
+monthly_summary <- all_sales %>%
+  group_by(month) %>%
+  summarise(
+    total_revenue = sum(revenue, na.rm = TRUE),
+    avg_price = mean(price_per_unit, na.rm = TRUE),
+    n_products = n_distinct(product_id),
+    .groups = "drop"
+  )
+
+
+monthly_summary
+```
+
+### **Етап 3: Аналіз якості даних**
+
+-   Визначте, **скільки файлів було пошкоджено** (порівняйте очікувану кількість файлів із реально завантаженими).
+-   Для кожного місяця обчисліть **частку рядків з `NA`** у будь-якому стовпці.
+-   Використовуйте `colSums(is.na(...))` — не цикли!
+
+```{r}
+
+file_list <- list.files("monthly_reports/", pattern = "\\.csv$", full.names = TRUE)
+actual_files <- length(file_list)
+
+
+damaged_files <- 12 - actual_files
+message("Очікувано файлів: ", 12)
+message("Успішно знайдено: ", actual_files)
+message("Відсутніх або пошкоджених файлів: ", damaged_files)
+
+
+na_summary <- all_sales %>%
+  mutate(any_na = if_else(rowSums(is.na(across(everything()))) > 0, 1, 0)) %>%
+  group_by(month) %>%
+  summarise(
+    total_rows = n(),
+    rows_with_NA = sum(any_na),
+    share_with_NA = rows_with_NA / total_rows,
+    .groups = "drop"
+  )
+
+
+na_by_column <- all_sales %>%
+  group_by(month) %>%
+  summarise(across(everything(), ~ sum(is.na(.x)), .names = "na_{col}"))
+
+
+message("\n Частка рядків з NA у будь-якому стовпці:")
+na_summary
+
+message("\n Кількість NA по кожному стовпцю (довідково):")
+na_by_column
+
+```
+
+#### **Етап 4: Порівняння підходів (на прикладі)**
+
+-   Напишіть **один і той самий розрахунок** двома способами:
+    1.  За допомогою `for`-циклу (для демонстрації).
+    2.  За допомогою `vapply()` або `sapply()`.
+-   Порівняйте швидкість за допомогою `system.time()` (не обов’язково в звіті, але для розуміння).
+
+```{r}
+months_vec <- unique(all_sales$month)
+
+
+system.time({
+  total_revenue_for <- numeric(length(months_vec))
+  
+  for (i in seq_along(months_vec)) {
+    m <- months_vec[i]
+    total_revenue_for[i] <- sum(all_sales$revenue[all_sales$month == m], na.rm = TRUE)
+  }
+  
+  revenue_for_df <- tibble(month = months_vec, total_revenue = total_revenue_for)
+})
+
+
+system.time({
+  total_revenue_sapply <- sapply(months_vec, function(m) {
+    sum(all_sales$revenue[all_sales$month == m], na.rm = TRUE)
+  })
+  
+  revenue_sapply_df <- tibble(month = names(total_revenue_sapply),
+                              total_revenue = total_revenue_sapply)
+})
+
+
+revenue_for_df
+revenue_sapply_df
+
+```

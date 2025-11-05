@@ -1,0 +1,11 @@
+product_id,region,units_sold,price_per_unit,discount_percent
+106.0,East,3226.13,5
+,North,24,27.48,5
+137.0,West,10,15.53,15
+171.0,West,13,28.89,0
+124.0,North,5,19.19,10
+116.0,South,3,26.33,0
+128.0,South,18,24.11,15
+159.0,North,30,7.67,15
+176.0,East,20,20.4,0
+179.0,East,39,28.76,0
